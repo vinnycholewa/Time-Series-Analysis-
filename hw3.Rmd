@@ -1,0 +1,424 @@
+---
+title: "HW3"
+author: "Vincent Cholewa"
+date: "10/17/2020"
+output:
+  word_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(TSA)
+library(data.table)
+library(vars)
+
+hw3_data = read.csv('Currency Conversion Data.csv')
+train = hw3_data[0:(length(hw3_data[,1])-8),]
+train.ts = ts(train[,c(2,3,4,5)],start=c(2014,1),freq=52)
+test = hw3_data[(length(hw3_data[,1])-7):length(hw3_data[,1]),]
+
+#USD/EUR
+EU.train = ts(train$USD.EU,start=c(2014,1),freq=52)
+EU.test = test$USD.EU
+
+#USD/GBP
+GBP.train = ts(train$USD.GBP,start=c(2014,1),freq=52)
+GBP.test = test$USD.GBP
+
+#USD/AU
+AU.train = ts(train$USD.AU,start=c(2014,1),freq=52)
+AU.test = test$USD.AU
+
+#USD/NZ
+NZ.train = ts(train$USD.NZ,start=c(2014,1),freq=52)
+NZ.test = test$USD.NZ
+```
+
+Question 1: Data Exploration (8 pts)
+
+We already identified in past assignments that differenced currency conversion data tends to more closely resemble a stationary process. Knowing this, skip analyzing the original series, and for each series take the 1st order difference of the data.
+
+Use relevant plots to evaluate assumptions of stationarity.
+
+```{r}
+par(mfrow=c(1,1))
+plot(diff(EU.train),xlab="Years",ylab="",main="1st Ord Diff: USD/EUR",type="l")
+plot(diff(GBP.train),xlab="Years",ylab="",main="1st Ord Diff: USD/GBP",type="l")
+plot(diff(AU.train),xlab="Years",ylab="",main="1st Ord Diff: USD/AUD",type="l")
+plot(diff(NZ.train),xlab="Years",ylab="",main="1st Ord Diff: USD/NZD",type="l")
+
+par(mfrow=c(1,1))
+acf(diff(EU.train), main="ACF D=1 USD/EUR", lag.max = 52)
+acf(diff(GBP.train), main="ACF D=1 USD/GBP", lag.max = 52)
+acf(diff(AU.train), main="ACF D=1 USD/AUD", lag.max = 52)
+acf(diff(NZ.train), main="ACF D=1 USD/NZD", lag.max = 52)
+```
+Question 2: Univariate Analysis
+
+2a. 
+Use EACF plots (max order = 7) on the differenced data and iteration by AIC (original data, max order = 5, max differencing = 1, significance threshold of 2) to identify the best order for each series. How do the orders selected through each method compare?
+
+```{r}
+#eacf method
+par(mfrow=c(2,1))
+eacf(diff(EU.train), ar.max = 7, ma.max = 7)
+eacf(diff(GBP.train), ar.max = 7, ma.max = 7)
+eacf(diff(AU.train), ar.max = 7, ma.max = 7)
+eacf(diff(NZ.train), ar.max = 7, ma.max = 7)
+
+#iteration by aic method (max order = 5, diff = 1)
+```
+
+
+EU/USD
+```{r message=FALSE, warning=FALSE}
+eu_usd = function(p,d,q){
+        mod = arima(EU.train, order=c(p,d,q), method="ML")
+        current.aic = AIC(mod)
+        df = data.frame(p,d,q,current.aic)
+        names(df) <- c("p","d","q","AIC")
+        
+        #print(paste(p,d,q,current.aic,sep=" "))
+        return(df)
+}
+
+eu_orders = data.frame(Inf,Inf,Inf,Inf)
+names(eu_orders) = c("p","d","q","AIC")
+
+
+for (p in 0:5){
+  for (d in 0:1){
+    for (q in 0:5) {
+      possibleError <- tryCatch(
+        eu_orders<-rbind(eu_orders,eu_usd(p,d,q)),
+        error=function(e) e
+      )
+      if(inherits(possibleError, "error")) next
+
+    }
+  }
+}
+eu_orders = eu_orders[order(-eu_orders$AIC),]
+tail(eu_orders,10) 
+```
+
+GBP/USD
+```{r message=FALSE, warning=FALSE}
+gbp_usd = function(p,d,q){
+        mod = arima(GBP.train, order=c(p,d,q), method="ML")
+        current.aic = AIC(mod)
+        df = data.frame(p,d,q,current.aic)
+        names(df) <- c("p","d","q","AIC")
+        
+        #print(paste(p,d,q,current.aic,sep=" "))
+        return(df)
+}
+
+gbp_orders = data.frame(Inf,Inf,Inf,Inf)
+names(gbp_orders) = c("p","d","q","AIC")
+
+
+for (p in 0:5){
+  for (d in 0:1){
+    for (q in 0:5) {
+      possibleError <- tryCatch(
+        gbp_orders<-rbind(gbp_orders,gbp_usd(p,d,q)),
+        error=function(e) e
+      )
+      if(inherits(possibleError, "error")) next
+
+    }
+  }
+}
+gbp_orders = gbp_orders[order(-gbp_orders$AIC),]
+tail(gbp_orders,10) 
+```
+
+AUD/USD
+```{r message=FALSE, warning=FALSE}
+aud_usd = function(p,d,q){
+        mod = arima(AU.train, order=c(p,d,q), method="ML")
+        current.aic = AIC(mod)
+        df = data.frame(p,d,q,current.aic)
+        names(df) <- c("p","d","q","AIC")
+        
+        #print(paste(p,d,q,current.aic,sep=" "))
+        return(df)
+}
+
+aud_orders = data.frame(Inf,Inf,Inf,Inf)
+names(aud_orders) = c("p","d","q","AIC")
+
+
+for (p in 0:5){
+  for (d in 0:1){
+    for (q in 0:5) {
+      possibleError <- tryCatch(
+        aud_orders<-rbind(aud_orders,aud_usd(p,d,q)),
+        error=function(e) e
+      )
+      if(inherits(possibleError, "error")) next
+
+    }
+  }
+}
+aud_orders = aud_orders[order(-aud_orders$AIC),]
+tail(aud_orders,10) 
+```
+
+NZD/USD
+```{r message=FALSE, warning=FALSE}
+nzd_usd = function(p,d,q){
+        mod = arima(NZ.train, order=c(p,d,q), method="ML")
+        current.aic = AIC(mod)
+        df = data.frame(p,d,q,current.aic)
+        names(df) <- c("p","d","q","AIC")
+        
+        #print(paste(p,d,q,current.aic,sep=" "))
+        return(df)
+}
+
+nzd_orders = data.frame(Inf,Inf,Inf,Inf)
+names(nzd_orders) = c("p","d","q","AIC")
+
+
+for (p in 0:5){
+  for (d in 0:1){
+    for (q in 0:5) {
+      possibleError <- tryCatch(
+        nzd_orders<-rbind(nzd_orders,nzd_usd(p,d,q)),
+        error=function(e) e
+      )
+      if(inherits(possibleError, "error")) next
+
+    }
+  }
+}
+nzd_orders = nzd_orders[order(-nzd_orders$AIC),]
+tail(nzd_orders,10) 
+```
+
+b. (12 pts)
+Regardless of what you observed above, fit the following ARIMA orders: EUR (2,1,3), GBP (1,1,1), AUD (1,0,3), NZD (2,0,2). Using these models, predict ahead 8 points. Plot these points with their 95% confidence intervals against the test data for each series.
+```{r}
+eu_arima = arima(EU.train, order = c(2,1,3), method = 'ML')
+gbp_arima = arima(GBP.train, order = c(1,1,1), method = 'ML')
+aud_arima = arima(AU.train, order = c(1,0,3), method = 'ML')
+nzd_arima = arima(NZ.train, order = c(2,0,2), method = 'ML')
+
+eu_pred = predict(eu_arima,   n.ahead=8)
+gbp_pred = predict(gbp_arima, n.ahead=8)
+aud_pred = predict(aud_arima, n.ahead=8)
+nzd_pred = predict(nzd_arima, n.ahead=8)
+```
+
+```{r}
+#You'll need this for plotting predictions
+eu_whole = ts(hw3_data$USD.EU,start=c(2014,1),freq=52)
+gbp_whole = ts(hw3_data$USD.GBP,start=c(2014,1),freq=52)
+aud_whole = ts(hw3_data$USD.AUD,start=c(2014,1),freq=52) 
+nzd_whole = ts(hw3_data$USD.NZ,start=c(2014,1),freq=52) 
+times = time(eu_whole)
+times.test = tail(times,8)
+```
+
+EU Plot
+```{r}
+eu_ub = eu_pred$pred + (1.96*eu_pred$se)
+eu_lb = eu_pred$pred - (1.96*eu_pred$se)
+eu_ymax = max(eu_ub)
+eu_ymin = min(eu_lb)
+
+n_eu = length(eu_whole)
+nfit_eu = n_eu-8
+
+par(mfrow=c(1,1))
+plot(times[nfit_eu:n_eu], eu_whole[nfit_eu:n_eu], type='l', ylim=c(eu_ymin,eu_ymax), 
+     main='EU/USD', 
+     xlab="Time", 
+     ylab="FX Rate")
+points(times.test, eu_pred$pred, col='red')
+lines(eu_ub,lty=3,lwd= 2, col="blue")
+lines(eu_lb,lty=3,lwd= 2, col="blue")
+```
+
+GBP
+```{r}
+gbp_ub = gbp_pred$pred + (1.96*gbp_pred$se)
+gbp_lb = gbp_pred$pred - (1.96*gbp_pred$se)
+gbp_ymax = max(gbp_ub)
+gbp_ymin = min(gbp_lb)
+
+n_gbp = length(gbp_whole)
+nfit_gbp = n_gbp-8
+
+par(mfrow=c(1,1))
+plot(times[nfit_gbp:n_gbp], gbp_whole[nfit_gbp:n_gbp], type='l', ylim=c(gbp_ymin,gbp_ymax), 
+     main='GBP/USD', 
+     xlab="Time", 
+     ylab="FX Rate")
+points(times.test, gbp_pred$pred, col='red')
+lines(gbp_ub,lty=3,lwd= 2, col="blue")
+lines(gbp_lb,lty=3,lwd= 2, col="blue")
+```
+
+AUD
+```{r}
+aud_ub = aud_pred$pred + (1.96*aud_pred$se)
+aud_lb = aud_pred$pred - (1.96*aud_pred$se)
+aud_ymax = max(aud_ub)
+aud_ymin = min(aud_lb)
+
+n_aud = length(aud_whole)
+nfit_aud = n_aud-8
+
+par(mfrow=c(1,1))
+plot(times[nfit_aud:n_aud], aud_whole[nfit_aud:n_aud], type='l', ylim=c(aud_ymin,aud_ymax), 
+     main='AUD/USD', 
+     xlab="Time", 
+     ylab="FX Rate")
+points(times.test, aud_pred$pred, col='red')
+lines(aud_ub,lty=3,lwd= 2, col="blue")
+lines(aud_lb,lty=3,lwd= 2, col="blue")
+
+```
+
+NZD
+```{r}
+nzd_ub = nzd_pred$pred + (1.96*nzd_pred$se)
+nzd_lb = nzd_pred$pred - (1.96*nzd_pred$se)
+nzd_ymax = max(nzd_ub)
+nzd_ymin = min(nzd_lb)
+
+
+n_nzd = length(nzd_whole)
+nfit_nzd = n_nzd-8
+
+par(mfrow=c(1,1))
+plot(times[nfit_nzd:n_nzd], nzd_whole[nfit_nzd:n_nzd], type='l', ylim=c(nzd_ymin,nzd_ymax), 
+     main='NZD/USD', 
+     xlab="Time", 
+     ylab="FX Rate")
+points(times.test, nzd_pred$pred, col='red')
+lines(nzd_ub,lty=3,lwd= 2, col="blue")
+lines(nzd_lb,lty=3,lwd= 2, col="blue")
+```
+
+c. (4 pts)
+
+For each set of predictions, compute mean absolute percentage error (MAPE). How do they compare in accuracy?
+```{r}
+#EU/USD
+eu_mape = 100*mean(abs(eu_pred$pred-EU.test)/EU.test)
+eu_mape #0.5789397
+#GBP/USD
+gbp_mape = 100*mean(abs(gbp_pred$pred-GBP.test)/GBP.test)
+gbp_mape #0.9954838       
+#AUD/USD
+aud_mape =100*mean(abs(aud_pred$pred-AU.test)/AU.test)
+aud_mape #0.5598311
+#NZD/USD
+nzd_mape =100*mean(abs(nzd_pred$pred-NZ.test)/NZ.test)
+nzd_mape #0.8846701
+```
+
+Question 3: Multivariate Analysis (28 pts)
+a. (4 pts)
+Identify the best VAR model that fits the four time series simultaneously according to AIC.
+```{r}
+par(mfrow=c(1,1))
+fx.train = ts.union(EU.train, GBP.train, AU.train, NZ.train)
+
+plot(fx.train, type='l')
+acf(fx.train) #? why does this not plot 
+pacf(fx.train)
+
+
+VARselect(fx.train, lag.max = 20)$selection
+plot(VARselect(fx.train, lag.max = 20)$criteria[1,], xlab='Order', ylab='AIC')
+#p=2
+
+mod_fx_1 = VAR(fx.train,lag.max=20,ic="AIC", type="none")
+mod_fx_2 = VAR(fx.train,lag.max=20,ic="AIC", type="const")
+mod_fx_3 = VAR(fx.train,lag.max=20,ic="AIC", type="trend")
+mod_fx_4 = VAR(fx.train,lag.max=20,ic="AIC", type="both")
+
+mod_fx_1$p #P = 2 
+mod_fx_2$p #P = 2
+mod_fx_3$p #P = 2
+mod_fx_4$p #P = 2
+
+mod_fx_hq = VAR(fx.train,lag.max=20,ic="HQ")
+mod_fx_sc = VAR(fx.train,lag.max=20,ic="SC")
+mod_fx_fpe = VAR(fx.train,lag.max=20,ic="FPE")
+
+mod_fx_hq$p #2
+mod_fx_sc$p #1 (BIC)
+mod_fx_fpe$p #2
+```
+
+b. (12 pts)
+Fit a VAR(2) model and check the model fitting using the multivariate ARCH test, the Jarque-Bera test and the Portmanteau test. State which assumptions are satisfied and which are violated
+```{r}
+#fit var(2) model
+fx_model_var = VAR(fx.train, lag.max=20, p=2)
+summary(fx_model_var)
+fx_model_var_restrict = restrict(fx_model_var)
+summary(fx_model_var_restrict)
+
+#arch test
+arch.test(fx_model_var)
+#jarque-bera test
+normality.test(fx_model_var)
+#portmanteau test
+serial.test(fx_model_var)
+serialtest = serial.test(fx_model_var)
+plot(serialtest)
+```
+
+c. (12 pts) 
+Give the forecasts for the next 8 weeks of the series using a VAR(2) model. You don't need to plot them (but can if you'd like). Include confidence intervals.
+```{r}
+var2_pred = predict(fx_model_var, n.ahead=8)
+var2_eu_pred = var2_pred[[1]]$EU.train[,c(1,4)]
+var2_gbp_pred = var2_pred[[1]]$GBP.train[,c(1,4)]
+var2_aud_pred = var2_pred[[1]]$AU.train[,c(1,4)]
+var2_nzd_pred = var2_pred[[1]]$NZ.train[,c(1,4)]
+
+#all results
+var2_pred
+#eu predictions & confident intervals
+var2_eu_pred
+#gbp predictions & confident intervals
+var2_gbp_pred
+#aud predictions & confident intervals
+var2_aud_pred
+#nzd predictions & confident intervals
+var2_nzd_pred
+```
+
+Using mean absolute percentage error, compare the predictions for the four time series derived from the univariate analysis and multivariate analysis.
+```{r}
+eu_mape_var = 100*mean(abs(var2_eu_pred[,1]-EU.test)/EU.test)
+gbp_mape_var = 100*mean(abs(var2_gbp_pred[,1]-GBP.test)/GBP.test)
+aud_mape_var =100*mean(abs(var2_aud_pred[,1]-AU.test)/AU.test)
+nzd_mape_var =100*mean(abs(var2_nzd_pred[,1]-NZ.test)/NZ.test)
+
+eu_mape_var  #0.6303623
+eu_mape  #0.5789397
+gbp_mape_var #0.8045432
+gbp_mape #0.9954838
+aud_mape_var #1.264681
+aud_mape #0.5598311
+nzd_mape_var #0.6890983
+nzd_mape #0.8846701
+```
+
+

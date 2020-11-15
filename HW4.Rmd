@@ -1,0 +1,285 @@
+---
+title: "HW4"
+author: "Vincent Cholewa"
+date: "11/6/2020"
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE}
+library(quantmod)
+library(tseries)
+library(fGarch)
+library(mgcv)
+library(TSA)
+library(rugarch)
+
+
+tsla_data = read.csv('TSLA.csv')
+#weekly returns 1/1/2012 - 4/28/2019
+#View(tsla_data)
+tsla_df = log(tsla_data[,2])
+#length(tsla_df) 383
+tsla.ts = ts(tsla_df,start=c(2012,1),freq=52)
+data.growth = diff(tsla.ts)
+```
+
+Exploratory analysis (not graded):
+```{r}
+#Exploratory analysis
+	#Plot original exchange rates
+		plot(tsla.ts,type='l',main='TSLA Stock Price',ylab="Price")
+		
+	#Plot differenced series
+		plot(data.growth,type='l',main='TSLA Stock Price',ylab="Diff Price")
+		hist(data.growth)
+
+	#ACF & PACF plots on original series
+		par(mfcol=c(2,1))
+		acf(tsla.ts,lag.max=52*3,main='ACF TSLA TS')
+		pacf(tsla.ts,lag.max=52*3,main='PACF TSLA TS')
+
+	#ACF & PACF plots on differenced series
+		par(mfcol=c(2,1))
+		acf(data.growth,ag.max=52*3,main='ACF Differenced TSLA TS')
+		pacf(data.growth,ag.max=52*3,main='PACF Difference TSLA TS')
+```
+
+Question 1: ARIMA(p,d,q) (15 Points)
+-With the growth rate data (first difference), use the iteration with the AIC metric selecting the minimum AIC (don't select a simpler model with higher AIC), select the best order of ARIMA model (max order 4,1,4).
+-Plot residual and square residual ACFs and interpret.
+-Perform and interpret tests for serial correlation and heteroscedasticity on model residuals. 
+
+```{r}
+## Fit ARIMA
+tsla_model = function(p,d,q){
+    mod = arima(data.growth, order=c(p,d,q), method="ML")
+    current.aic = AIC(mod)
+    df = data.frame(p,d,q,current.aic)
+    names(df) <- c("p","d","q","AIC")
+    print(paste(p,d,q,current.aic,sep=" "))
+    return(df)
+}
+
+orders = data.frame(Inf,Inf,Inf,Inf)
+names(orders) <- c("p","d","q","AIC")
+
+for (p in 0:4){
+    for(d in 0:1) {
+        for (q in 0:4) {
+            possibleError <- tryCatch(
+                orders<-rbind(orders,tsla_model(p,d,q)),
+                error=function(e) e
+            )
+            if(inherits(possibleError, "error")) next
+
+        }
+    }
+}
+orders <- orders[order(-orders$AIC),]
+min(orders);tail(orders)
+#arima(4,0,2) aic=-1003.803
+
+tsla_arima = arima(data.growth, order=c(4,0,2))
+tsla_arima      
+
+
+## Residual Analysis
+tsla_resids = resid(tsla_arima)[-1]
+#plot of residuals
+	par(mfcol=c(2,1))
+	plot(tsla_resids,main='Residuals of TSLA ARIMA Fit')
+	plot(tsla_resids^2,main='Squared Residuals of TSLA ARIMA Fit')
+
+#acf plots
+acf(tsla_resids,lag.max = 52*5, main="Residuals of ARIMA Fit")
+acf(tsla_resids^2,lag.max = 52*5 ,main="Squared Residuals of ARIMA Fit")
+
+# for serial correlation
+Box.test(tsla_resids,lag=7,type='Ljung',fitdf=6) #df = arima(4,0,2), lag = df + 1
+#p-value = 0.3182; fail to reject null = plausibly uncorrelated residuals
+
+# for arch effect
+Box.test((tsla_resids)^2,lag=7,type='Ljung',fitdf=6) #df = arima(4,0,2), lag = df + 1
+#p-value = 0.01551; reject the null = correlated residuals 
+```
+
+Question 2: ARMA(p,q)GARCH(m,n) (20 Points)
+-With the growth rate data (first difference) and using the multi-step refinement method (see piazza post @628) with minimum BIC starting with ARMA order calculated in Q1, find the best ARMA(P,Q)-GARCH(M,N) order pair. 
+
+The order of the process is:
+1. Select an ARMA order (same as we've done so far)
+2. With the ARMA order selected in 1, select a GARCH order
+3. With the new GARCH order, select the best ARMA order
+4. Of the potentially 2 ARMA-GARCH orders now found, choose the one with the lowest BIC.
+
+```{r}
+#Initial GARCH Order
+#ARIMA-GARCH GARCH order
+test_modelAGG <- function(m,n){
+  spec = ugarchspec(variance.model=list(garchOrder=c(m,n)),
+                    mean.model=list(armaOrder=c(4,2), 
+                                    include.mean=T), distribution.model="std")    
+  fit = ugarchfit(spec, data.growth, solver = 'hybrid')
+  current.bic = infocriteria(fit)[2]
+  df = data.frame(m,n,current.bic)
+  names(df) <- c("m","n","BIC")
+  print(paste(m,n,current.bic,sep=" "))
+  return(df)
+}
+
+garch_orders = data.frame(Inf,Inf,Inf)
+names(garch_orders) <- c("m","n","BIC")
+
+
+for (m in 0:2){
+  for (n in 0:2){
+    possibleError <- tryCatch(
+      garch_orders<-rbind(garch_orders,test_modelAGG(m,n)),
+      error=function(e) e
+    )
+    if(inherits(possibleError, "error")) next
+  }
+}
+garch_orders <- garch_orders[order(-garch_orders$BIC),]
+tail(garch_orders); min(garch_orders) #arch(1,2) with bic = -2.585301
+
+#ARMA update
+#ARIMA-GARCH ARIMA order
+test_modelAGA <- function(p,q){
+  spec = ugarchspec(variance.model=list(garchOrder=c(1,2)),
+                    mean.model=list(armaOrder=c(p,q), 
+                                    include.mean=T), distribution.model="std")    
+  fit = ugarchfit(spec, data.growth, solver = 'hybrid')
+  current.bic = infocriteria(fit)[2]
+  df = data.frame(p,q,current.bic)
+  names(df) <- c("p","q","BIC")
+  print(paste(p,q,current.bic,sep=" "))
+  return(df)
+}
+
+arma_orders = data.frame(Inf,Inf,Inf)
+names(arma_orders) <- c("p","q","BIC")
+
+
+for (p in 0:4){
+  for (q in 0:4){
+    possibleError <- tryCatch(
+      arma_orders<-rbind(arma_orders,test_modelAGA(p,q)),
+      error=function(e) e
+    )
+    if(inherits(possibleError, "error")) next
+  }
+}
+arma_orders <- arma_orders[order(-arma_orders$BIC),]
+tail(arma_orders); min(arma_orders) #arma(4,4); bic = -2.634431
+
+
+#GARCH update
+test_modelAGG <- function(m,n){
+  spec = ugarchspec(variance.model=list(garchOrder=c(m,n)),
+                    mean.model=list(armaOrder=c(4,4), 
+                                    include.mean=T), distribution.model="std")    
+  fit = ugarchfit(spec, data.growth, solver = 'hybrid')
+  current.bic = infocriteria(fit)[2]
+  df = data.frame(m,n,current.bic)
+  names(df) <- c("m","n","BIC")
+  print(paste(m,n,current.bic,sep=" "))
+  return(df)
+}
+
+orders_arma_arch = data.frame(Inf,Inf,Inf)
+names(orders_arma_arch) <- c("m","n","BIC")
+
+
+for (m in 0:2){
+  for (n in 0:2){
+    possibleError <- tryCatch(
+      orders_arma_arch<-rbind(orders_arma_arch,test_modelAGG(m,n)),
+      error=function(e) e
+    )
+    if(inherits(possibleError, "error")) next
+  }
+}
+orders_arma_arch <- orders_arma_arch[order(-orders_arma_arch$BIC),]
+tail(orders_arma_arch); min(orders_arma_arch) #arch(1,1) bic = -2.644133
+#best model is arma(4,4)garch(1,1)
+```
+Fit this model.
+-Fully write out the equation. You can simply state the level of differencing Y represents in the data for simplicity sake.
+-Perform goodness of fit tests on this model and interpret. (Hint: summary of a garchFit model performs them all, you just need to interpret).
+```{r}
+#fit and write out model using garchFit
+tsla_archFit_ts = garchFit(~ arma(4,4)+ garch(1,1), data=data.growth, trace = FALSE)
+summary(tsla_archFit_ts) #goodness of fit also shown in output
+
+#Forumula
+##Differenced data
+##yt = 0.00426141 - 0.75959443yt-1 - 0.19646565yt-2 + 0.57980867yt-3 + 0.09368774yt-4 + zt + 0.76189675zt-1 + 0.20717926zt-2 - 0.54108576zt-3 + 0.01292682zt-4 
+##zt = sigmatRt
+##sigmat^2 = 0.00026663 + 0.06429848zt^2-1 + 0.8702856sigmat^2-1
+```
+
+Question 3: Forecasting (15 Points)
+Using the rolling forecasting method (for each pred, fit A-G model to all points prior), forecast last 40 points.
+-Calculate MAPE, and Precision
+```{r}
+tsla_spec_1 = ugarchspec(variance.model=list(garchOrder=c(1,1)),
+                 mean.model=list(armaOrder=c(4, 4),
+                 include.mean=T), distribution.model="std")
+
+n = length(data.growth)
+data.test = data.growth[(length(data.growth)-39):length(data.growth)]
+data.train = data.growth[1:(length(data.growth)-40)]
+
+
+#Prediction of the return time series and the volatility sigma
+nfore = length(data.test)
+fore.series.1 = NULL
+fore.sigma.1 = NULL
+
+for(f in 1:nfore)
+        {
+        #Fit models
+        data = data.train
+        if(f>2)
+                data = c(data.train,data.test[1:(f-1)])  
+        final.model = ugarchfit(tsla_spec_1, data, solver = 'hybrid')   
+                #Forecast
+        fore = ugarchforecast(final.model, n.ahead=1)
+        fore.series.1 = c(fore.series.1, fore@forecast$seriesFor)
+        fore.sigma.1 = c(fore.sigma.1, fore@forecast$sigmaFor)
+}
+length(fore.series.1)
+###Compute Accuracy Measures 
+## Mean Absolute Percentage Error (MAPE)
+mean(abs(fore.series.1 - data.test)/abs(data.test))
+##Precision Measure (PM)
+sum((fore.series.1 - data.test)^2)/sum((data.test-mean(data.test))^2)
+```
+
+-Overlay the draw an overlay of the predicted points on the original series in that range.
+```{r}
+##plot points
+ymin = min(c(as.vector(data.test), fore.series.1), na.rm =T)
+ymax = max(c(as.vector(data.test), fore.series.1), na.rm =T)
+data.plot = data.test
+names(data.plot)="Fore"
+n = length(data.growth)
+plot(ts(data.growth[c(n-39):n]),type="l", ylim=c(ymin,ymax), xlab="Time (Weekly)", ylab="Diff: Return Price")
+points(data.test, lwd=2, col='blue')
+points(fore.series.1, lwd=2, col='red')
+
+length(fore.series.1)
+
+##plot variance
+plot(data.growth[c(n-40):n]^2,type="l", ylim=c(ymin,ymax), xlab="Time", ylab="Return Price")
+data.plot$Fore=fore.sigma.1^2
+points(data.frame(data.plot), lwd=2, col='blue')
+```

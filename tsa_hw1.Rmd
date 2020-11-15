@@ -1,0 +1,392 @@
+---
+title: "TSA_HW1"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+Per Piazza:
+For 1b, you need 4 TS plots, 
+4 ACF plots and 1 or 4 model fit plot(s) (depending on if you want to fit the 4 models together in one plot or doing them separately) 
+For 2a, 2 TS plots and 2 ACF plots. 
+For 2b, 2 fitted plots, 2 TS plots and 2 ACF plots. 
+#residuals vs time plot = ts.plot((temp-temp.fit.mav),ylab="Temperature")
+
+**Load libraries.**
+```{r results='hide', message=FALSE, warning=FALSE}
+setwd("~/Documents/GAT/TS_6402/TS_WD")
+library(locfit)
+library(mgcv)
+library(ggplot2)
+library(ggfortify)
+library(dynlm)
+library(lubridate)
+library(forecast)
+install.packages("~/Downloads/TSA_1.2.1.tar.gz", repos = NULL, type = "source")
+library(TSA)
+```
+
+```{r}
+#used later in my code
+harmonic =
+  function (x, m = 1) 
+  {
+    if (!is.ts(x) || (2 * m) > frequency(x)) 
+      stop("x need to be a time series with 2m <= frequency(x)")
+    y = outer(2 * pi * time(x), 1:m)
+    cosy = apply(y, 2, cos)
+    siny = apply(y, 2, sin)
+    mult = 2 * (1:m)
+    colnames(cosy) = paste(paste("cos(", mult, sep = ""), "*pi*t)", 
+                           sep = "")
+    colnames(siny) = paste(paste("sin(", mult, sep = ""), "*pi*t)", 
+                           sep = "")
+    out = cbind(cosy, siny)
+    colnames(out) = c(colnames(cosy), colnames(siny))
+    if ((2 * m) == frequency(x)) 
+      out = out[, -(2 * m)]
+    invisible(out)
+  }
+seas
+```
+
+**Load data and convert object to time-series format.**
+```{r}
+data_raw = read.csv('la_monthly_temp.csv', header = T)
+tail(data_raw)
+data = data_raw[,2]
+tail(data)
+temp = ts(data,start=c(1950,1),freq=12)
+#View(tail(temp)) sanity check 
+
+```
+**Question 1a: Exploratory Data Analysis** 
+Plot the Time Series and ACF plots. Comment on the main features, and identify what (if any) assumptions of stationarity are violated. **Hint:** Before plotting, can you infer anything from the nature of the data? On its own, which type of model do you think will fit the data best: trend or seasonality fitting?
+
+**Answer**: Before plotting I came with the presumption that my analysis would result in signs of seasonality and an upward trend. Although I am not an expert on LA temperatures, I was under the assumption LA did experience mild seasonal changes. Furthermore, given the evidence of global warming, I expected to see a trend of increased temperatures.   
+```{r}
+#ts.plot(temp, ylab= 'Temperature')
+ggplot(data_raw, aes(Date, Temp, color=Temp)) + geom_point() +
+        geom_smooth(model = 'lm') +
+        ggtitle('LA Monthly Temperature')
+```
+ACF Plot
+```{r}
+par(mfrow=c(1,1))
+acf(temp, lag.max = 10*12, main='Autocorrelation') #autocorrelation plot
+acf(temp, lag.max = 10*12, type = 'covariance', main = 'Autocovariance') #autocovariance plot
+checkresiduals(temp)
+```
+**Answer:** Looking at ts.plot I see signs of seasonality and what appears to be an upward trend. The ggplot provides a more precise view into the trend and affirms the appearance of seasonality. When assessing the ACF plot of correlation and covariance there are clear signs of seasonality and nonstationary This time series clearly violates the assumption of a constant mean, as reflected in the trend, and the covariance fluctuating with time, as indicated in the ACF plots. 
+
+**Question 1b: Trend Estimation**
+Fit the following trend estimation models:
+Moving average
+Parametric quadratic polynomial
+Local Polynomial
+Splines
+
+Overlay the fitted values on the original time series.
+```{r}
+## Create equally spaced time points for fitting trends
+time_pts = c(1:length(temp))
+time_pts = c(time_pts - min(time_pts))/max(time_pts)
+#View(time_pts) view for my FYI 
+
+## Fit a moving average 
+mov_avg_fit = ksmooth(time_pts, temp, kernel = "box")
+temp_fit_mov_avg = ts(mov_avg_fit$y,start=1950,frequency=12)
+
+## Is there a trend? [MA]
+par(mfrow=c(1,1))
+ts.plot(temp,ylab="Temperature", main='TS vs MA Fitted Values')
+lines(temp_fit_mov_avg,lwd=2,col="purple")
+abline(temp_fit_mov_avg[1],0,lwd=2,col="blue")
+abline(temp_fit_mov_avg[1],0)
+acf(temp_fit_mov_avg, main='Moving Average ACF')
+
+## Fit a parametric quadratic polynomial
+x1 = time_pts
+x2 = time_pts^2
+lm_pqp_fit = lm(temp~x1+x2)
+temp_fit_lm = ts(fitted(lm_pqp_fit),start=1950,frequency=12)
+#Is there a trend? [pqp]
+par(mfrow=c(1,1))
+ts.plot(temp,ylab="Temperature", main ='TS vs Quadratic Polynomial Fitted Values')
+lines(temp_fit_lm,lwd=2,col="green")
+acf(temp_fit_lm, main='Quadratic Polynomial ACF')
+## Local Polynomial Trend Estimation
+locp_fit = loess(temp~time_pts)
+temp_fit_locp = ts(fitted(locp_fit),start=1950,frequency=12)
+#Is there a trend? [local polynomial]
+par(mfrow=c(1,1))
+ts.plot(temp,ylab="Temperature", main ='TS vs Local Polynomial Fitted Values')
+lines(temp_fit_locp,lwd=2,col="green")
+acf(temp_fit_lm, main='Local Polynomial ACF')
+## Splines Trend Estimation
+gam_fit = gam(temp~s(time_pts))
+temp_fit_gam = ts(fitted(gam_fit),start=1950,frequency=12) 
+## Is there a trend? [Spline regression]
+par(mfrow=c(1,1))
+ts.plot(temp,ylab="Temperature", main='TS vs Spline Regression Fitted Values')
+lines(temp_fit_gam,lwd=2,col="green")
+acf(temp_fit_gam, main='Spline Regression ACF')
+
+#Graphed all at once
+all_val = c(temp_fit_mov_avg,temp_fit_lm,temp_fit_gam,temp_fit_locp)
+ylim= c(min(all_val),max(all_val))
+ts.plot(temp_fit_lm,lwd=2,col="green",ylim=ylim,ylab="Temperature")
+lines(temp_fit_mov_avg,lwd=2,col="purple")
+lines(temp_fit_gam,lwd=2,col="red")
+lines(temp_fit_locp,lwd=2,col="brown")
+legend(x=1950,y=64,legend=c("MAV","LM","GAM","LOESS"),lty = 1, col=c("purple","green","red","brown"))
+
+
+#model performance
+summary(mov_avg_fit)
+summary(lm_pqp_fit) #Multiple R-squared:  0.05925
+summary(locp_fit)
+summary(gam_fit) #R-sq.(adj) =  0.0599 
+```
+**Answer:** I plotted each of the four model's fitted values against the original time series. Each model shows significant signs of an increased positive trend. When assessing the plot overlaying each model's fitted values we start to see a divergence from the moving average and the nascent trend of exponential growth showcased specifically with the local polynomial and the spline regression model. 
+
+Construct and plot the residuals with respect to time and ACF of residuals. Comment on the four models fit and on the appropriateness of the stationarity assumption of the residuals.
+```{r}
+#plot residuals
+par(mfrow=c(1,1))
+#moving average
+diff_fit_ma = ts(temp-mov_avg_fit$y, start = 1950, frequency = 12)
+ts.plot(diff_fit_ma, ylab='Residual Process', col='red', main='Moving Average Residuals')
+acf(diff_fit_ma,lag.max = 12*6, main='Moving Average ACF Plot', col='red')
+#spline regression 
+diff_fit_gam = ts(temp-fitted(gam_fit), start = 1950, frequency = 12)
+par(mfrow=c(1,1))
+ts.plot(diff_fit_gam, ylab='Residual Process', main='Spline Residuals', col='green')
+acf(diff_fit_gam, lag.max = 12*6, main='Spline Regression ACF Plot', col='green')
+#local polynomial 
+diff_fit_locp = ts(temp-fitted(locp_fit),start = 1950, frequency = 12)
+par(mfrow=c(1,1))
+ts.plot(diff_fit_locp, ylab='Residual Process', main='Local Polynomial Residuals', col='purple')
+acf(diff_fit_locp,  lag.max = 12*6, main='Polynomial ACF Plot', col='purple')
+#parametric quadratic polynomial 
+diff_fit_pqp = ts(temp-fitted(lm_pqp_fit), start = 1950, frequency = 12)
+par(mfrow=c(1,1))
+ts.plot(diff_fit_pqp, ylab='Residual Process',main='Parametric Quadratic Residuals', col= 'brown')
+acf(diff_fit_pqp,  lag.max = 12*6, main='PQP ACF Plot', col= 'brown')
+#compare approaches
+par(mfrow=c(1,1))
+ts.plot(diff_fit_ma, ylab="Residual Process",col="red")
+lines(diff_fit_gam, col='green')
+lines(diff_fit_locp, col='purple')
+lines(diff_fit_pqp, col='brown')
+#acf plots
+```
+```{r}
+par(mfrow=c(3,2))
+acf(temp,lag.max = 12*10, main='Raw Data')
+acf(diff_fit_ma, lag.max = 12*6, main='Moving Average Residuals')
+acf(diff_fit_gam, lag.max = 12*6, main='Spline Regression Residuals')
+acf(diff_fit_locp, lag.max = 12*6, main='Polynomial Residuals')
+acf(diff_fit_pqp, lag.max = 12*6, main='Parametric Quadratic Polynomial Residuals')
+```
+**Answer:** When analyzing the residuals plotted against time and the residual ACF plots I see improvement with respect to trend but clear signs of seasonality still exists. None of these models are stationary. Although the assumption of constant mean appears to hold, the covariance is time dependent as it shifts with time. This is expected as the aforementioned targeted trend and the subsequent section will address (hopefully) seasonality. 
+
+**Question 1c: Seasonality Estimation**
+Seasonality Estimation:
+Fit the following seasonality estimation models.
+    Categorical Linear Regression (ANOVA)
+    COS-SIN
+Overlay the fitted values on the original time series.  Construct and plot the residuals with respect to time  and ACF plots. Comment on how the two models fit and on the appropriateness of the stationarity assumption of the residuals. Also compare the fits to those in part B and comment if your initial prediction was correct.
+```{r}
+## Estimate seasonality using ANOVA approach
+#stl(temp, s.window = "periodic") sanity check 
+data_raw$month = data_raw$Date %% 100
+data_raw$month = as.character(data_raw$month)
+#with intercept (not all months are significant with this approach)
+seasonal_mod_intercept = lm(temp~data_raw$month)
+summary(seasonal_mod_intercept) #Multiple R-squared:  0.811
+#removing intercept (produces more robust model and all months are significant)
+seasonal_mod = lm(temp~data_raw$month-1)
+summary(seasonal_mod) #Multiple R-squared:  0.9985
+#identical model as seasonal_mod but using dynlm's season function
+seasonal_mod2 = dynlm(temp~season(temp)-1) #
+summary(seasonal_mod2) #same as mod1
+#fit anova model
+diff_fit_anova = ts(temp-fitted(seasonal_mod),start = 1950, frequency = 12)
+
+#Estimate seasonality using cos-sin model
+seasonal_mod3 = dynlm(temp~harmon(temp))
+summary(seasonal_mod3) #Multiple R-squared:  0.7841
+seasonal_mod4=dynlm(temp~harmon(temp,2))
+summary(seasonal_mod4) #Multiple R-squared:  0.8074
+#fit cos-sin model
+diff_fit_cosin = ts(temp-fitted(seasonal_mod4),start = 1950, frequency = 12)
+
+## Compare Seasonality Estimates
+st1 = coef(seasonal_mod)
+seasonal_mod_resid = residuals(seasonal_mod)
+seasonal_mod_resid = ts(seasonal_mod_resid)
+## Cos-Sin Model
+st2 = fitted(seasonal_mod4)[1:12]
+seasonal_mod4_resid = residuals(seasonal_mod4[1:12])
+#overlay plot fitted values
+par(mfrow=c(1,1))
+plot(diff_fit_anova, type = 'l',col='red',xlab="Month",ylab="Seasonality", main='Fitted Values')
+lines(diff_fit_cosin, col='blue')
+#overlay plot of residuals
+par(mfrow=c(1,1))
+ts.plot(seasonal_mod4_resid,col='red',xlab="Month",ylab="Seasonality", main='Residuals')
+lines(seasonal_mod_resid, col='blue', lwd =2)
+```
+
+```{r}
+par(mfrow=c(1,1))
+#anova acf plot
+acf(as.numeric(resid(seasonal_mod)), main='ACF Plot of ANOVA residuals', lag.max = 120*12, col='red')
+#cos-sin acf plot
+acf(as.numeric(resid(seasonal_mod4)), main = 'ACF Plot of COS-SIN', lag.max = 120*12, col='blue')
+```
+**Answer:** The model fit has improved drastically capturing the seasonality aspect within this time series. We see both model's R^2 are very high signaling robustness Unlike 1b, we now see signs of trend and although the covariance approaches zero, it is still in violation of the covariance function changing in shifts in time. 
+
+**Question 2: Currency Conversion Analysis (40 Points)**
+```{r}
+data_fx_raw = read.csv('usd_eur_exchange.csv')
+head(data_fx_raw) #1/5/2000 to 5/29/2019
+data_fx = data_fx_raw[,2]
+head(data_fx)
+#Convert to TS data in proper frame
+fx_rate = ts(data_fx,start=c(2000,1),freq=52)
+checkresiduals(object = fx_rate)
+fx_dates = data_fx_raw$DATE
+head(fx_dates)
+fx_dates = as.Date(fx_dates, format="%Y-%m-%d")
+head(fx_dates)
+#Generate differenced data
+rate_dif = diff(fx_rate)
+#length(rate_dif)
+```
+**Question 2a: Exploratory Data Analysis**
+Plot the Time Series and ACF plots. Comment on the main features, and identify what (if any) assumptions of stationarity are violated.
+```{r}
+par(mfrow=c(1,1))
+ts.plot(data_fx, ylab='FX Rate', main = 'USD EUR FX Time Series', col= 'red')
+acf(data_fx, lag.max = 12*6, main='Foreign Exchange ACF Plot', col= 'red')
+```
+**Answer:** Although the time-series plot itself is difficult to spot trend or seasonality there does appear to be a minor trend with no signs of seasonality - although the plot is cyclical  in nature. When examining the ACF plot the downward trend in autocorrelation as lags increase affirms my hypothesis that this time series has a trend. This provides clues this time series is not stationary and violates the constant mean and that the covariance changes overtime. 
+
+Using the differenced rate data ('rate.dif'), plot both the Time Series and ACF plots. Comment on the main features, and identify what (if any) assumptions of stationarity are violated. Additionally comment if you believe the differenced data is more appropriate for use in analysis. Support your position with your graphical analysis.
+```{r}
+par(mfrow=c(1,1))
+ts.plot(rate_dif, ylab='Differenced FX Rates', main = 'Rate Difference Time Series', col='blue')
+acf(rate_dif, lag.max = 52*6, main='Differenced FX Rates ACF Plot', col='blue')
+```
+**Answer:** The differenced data appears to provide a more stationary approach to this data. The trend appears to be removed and although there is a cyclical event in 2008ish, this is likely due to the great financial crisis and often classified as a 8-sigma event (ie highly unlikely). Focusing attention to the ACF plot, we see drastic improvement in the acf throughout different lags and although the acf crosses the confidence thresholds sporadically, this time-series seems to be fairly stationary.  
+
+**Question 2b: Trend-Seasonality Estimation**
+Using the original time series data, fit the following models to estimate both trend and seasonality:
+        Parametric Polynomial Regression
+        Non-parametric model
+```{r}
+timepts = c(1:length(data_fx))
+timepts = c(timepts - min(timepts))/max(timepts)
+
+##create quadratic model -trend
+x1_2b = timepts
+x2_2b = timepts^2
+lm_quad_fit = lm(data_fx~x1_2b + x2_2b)
+summary(lm_quad_fit) # 0.7292
+#fitted values
+quad_fit_lm = ts(fitted(lm_quad_fit))
+par(mfrow=c(1,1))
+ts.plot(quad_fit_lm,ylab='Fitted FX Values', main='Parametric Quadratic Model', col='green')
+acf(quad_fit_lm, main='Parametric Quadratic Model ACF', col='green')
+#model seasonality using anova 
+quad_seas_fit = dynlm(fx_rate ~ season(fx_rate)-1)
+summary(quad_seas_fit) #R^2 = 0.9812
+#both trend & seasonality
+quad_ts = dynlm(fx_rate ~ x1_2b + x2_2b + season(fx_rate))
+summary(quad_ts) #0.7303
+quad_ts_fit = ts(fitted(quad_ts), start=2000, frequency = 52)
+par(mfrow=c(1,1))
+ts.plot(quad_ts_fit, ylab='Fitted FX Values', main='Parametric Quadratic Model & Seasonality', col='brown')
+acf(quad_ts_fit, main='ACF plot', col='brown')
+#quadratic trend & seasonality residuals
+diff_fit_quad = ts(fx_rate-quad_ts_fit, start = 2000, frequency = 52)
+par(mfrow=c(1,1))
+ts.plot(diff_fit_quad, ylab="Temperature",col='red', main='Quadratic & Seasonality Residuals')
+acf(diff_fit_quad,  lag.max = 52*6, main='Quad Resid ACF Plot', col='red')
+
+##create non-parametric model - trend
+fx_spline = gam(fx_rate~s(timepts))
+summary(fx_spline) #0.885
+fx_fit_gam = ts(fitted(fx_spline), start=2000, frequency = 52)
+par(mfrow=c(1,1))
+plot(fx_fit_gam, col= 'blue', main='Spline Fitted Values vs Original')
+lines(fx_rate, col = 'red')
+acf(fx_fit_gam, col='red')
+#both trend & seasonality
+week = as.factor(format(fx_dates, '%U'))
+spline_ts = gam(fx_rate~s(timepts)+week)
+summary(spline_ts) #0.879 
+spline_ts_fit = ts(fitted(spline_ts), start=2000, frequency = 52)
+par(mfrow=c(1,1))
+ts.plot(spline_ts_fit, ylab= 'FX Rates', col='red', main='Fitted Spline Values & Seasonality vs Original')
+lines(fx_rate, col='blue')
+acf(spline_ts_fit, lag.max = 52*15, main='Spline ACF Plot', col='blue')
+#trend & seasonality residuals
+diff_fit_spline = ts(fx_rate-spline_ts_fit, start = 2000, frequency = 52)
+par(mfrow=c(1,1))
+ts.plot(diff_fit_spline,ylab="Temperature", col='red', main='Fitted Residuals vs FX Rates')
+acf(diff_fit_spline,  lag.max = 52*6, main='Spline Resid ACF Plot')
+```
+**Answer:** Both models have a high R^2 and good fit but these models appear not to rectify the issue of nonstationary. Both ACF plots show signs of covariance changing overtime. 
+
+**Question 2c: Trend-Seasonality Estimation with Differenced Data**
+Now using the differenced time series data, construct the same type of models as you did above. 
+        Overlay the fitted values on the original time series.
+        Construct and plot the residuals with respect to time and ACF of residuals. 
+Comment on the two models fit and on the appropriateness of the stationarity assumption of the residuals. Additionally, comment if models built with original or differenced data appear to differ in quality of fit; which (if any) is better?
+```{r}
+#parametric quadratic polynomial on differenced data
+#both trend & seasonality
+#length(rate_dif) #sanity check
+timepts_2c = c(1:length(rate_dif))
+timepts_2c = c(timepts_2c - min(timepts_2c))/max(timepts_2c)
+x1_2c = timepts_2c
+x2_2c = timepts_2c^2
+diff_quad_ts = dynlm(rate_dif ~ x1_2c + x2_2c + season(rate_dif))
+summary(diff_quad_ts) #Multiple R-squared:  0.05725
+#fited values quadratic polynomial /w fitted values
+diff_quad_ts_fit = ts(fitted(diff_quad_ts), start=c(2000,2),freq=52)
+#Spline Regression
+week_2c = week[-1]
+diff_spline_ts = gam(rate_dif~s(timepts_2c)+week_2c)
+summary(diff_spline_ts) #R-sq.(adj) =  -0.000941
+#fitted values spline regression w/ differenced data
+diff_spline_ts_fit = ts(fitted(diff_spline_ts), start=c(2000,2), frequency = 52)
+head(rate_dif)
+#overlay fitted values on original time series
+par(mfrow=c(1,1))
+all_val_c = c(diff_quad_ts_fit, diff_spline_ts_fit, rate_dif)
+ylim_c = c(min(all_val_c),max(all_val_c))
+ts.plot(rate_dif, main='Differenced Quadratic & Spline vs FX Rates', ylab = 'FX Rates', col='black', ylim=ylim_c)
+lines(diff_quad_ts_fit,col='red', lwd =2)
+lines(diff_spline_ts_fit, col='blue', lwd =2)
+
+#Construct & plot residuals over time
+quad_1c_resids = ts(rate_dif-diff_quad_ts_fit, start = c(2000,2), frequency = 52)
+spline_1c_resids = ts(rate_dif - diff_spline_ts_fit, start = c(2000,2), frequency = 52)
+par(mfrow=c(1,1))
+plot(quad_1c_resids, col='red', ylab='Differenced FX Residuals', main='Differenced FX Residuals TS')
+lines(spline_1c_resids, col='blue')
+
+#plot residual acf
+par(mfrow=c(1,1))
+acf(quad_1c_resids, main='Quadratic ACF plot of differenced residuals', col='red')
+acf(spline_1c_resids, main='Spline ACF plot of differenced residuals', col='blue')
+```
+**Answer:** The models built using the original dataset (2b) result in drastically higher R^2 values but do not rectify the issue of covariance function changing through lags. The models constructed on the differenced data are dismal since the differenced data already eliminated the trend and seasonality component. The models built in 2c (built on the differenced data) do however to be stationary. 
+
