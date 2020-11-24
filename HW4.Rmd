@@ -98,8 +98,8 @@ tsla_resids = resid(tsla_arima)[-1]
 	plot(tsla_resids^2,main='Squared Residuals of TSLA ARIMA Fit')
 
 #acf plots
-acf(tsla_resids,lag.max = 52*5, main="Residuals of ARIMA Fit")
-acf(tsla_resids^2,lag.max = 52*5 ,main="Squared Residuals of ARIMA Fit")
+acf(tsla_resids, main="Residuals of ARIMA Fit")
+acf(tsla_resids^2 ,main="Squared Residuals of ARIMA Fit")
 
 # for serial correlation
 Box.test(tsla_resids,lag=7,type='Ljung',fitdf=6) #df = arima(4,0,2), lag = df + 1
@@ -108,6 +108,7 @@ Box.test(tsla_resids,lag=7,type='Ljung',fitdf=6) #df = arima(4,0,2), lag = df + 
 # for arch effect
 Box.test((tsla_resids)^2,lag=7,type='Ljung',fitdf=6) #df = arima(4,0,2), lag = df + 1
 #p-value = 0.01551; reject the null = correlated residuals 
+arch.test(tsla_arima)
 ```
 
 Question 2: ARMA(p,q)GARCH(m,n) (20 Points)
